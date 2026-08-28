@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Unicorn Chase Runner</title>
+  <style>
+    body {
+      margin: 0;
+      background: #663300;
+      color: #fff;
+      font-family: sans-serif;
+      text-align: center;
+    }
+  #cb canvas {
+    /* cursor: none; */
+    background-color: #19e1d6;
+    width: 100%;
+    display: block;
+  }
+  
+  div#cb {
+    width: 100vw;
+    height: 76vw;
+    max-height: 100vh;
+    max-width: 199.57vh;
+    margin: auto;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  }
+  </style>
+</head>
+<body>
+<div id="cb"></div>    
+  <script>
+    "use strict";
+
+
+class KeyInput{
+    
+    static pres = [];//pressed
+    static rel = [];//released
+
+    static IsDown(k1, k2) {
+        return this.pres[k1] || this.pres[k2];
+    }
+
+    static IsSingle(key) {
+        var k = this.pres[key] && (this.rel[key] !== null || this.rel[key]);
+        if(k){
+            this.rel[key] = null;
+        }
+        return k;
+    }
+    
+    static Pressed(e, status) {
+        var k = this.SetKey(e);
+        this.pres[k] = status;
+        return k;
+    }
+
+    static Released(e, status) {
+        var k = this.SetKey(e);
+        this.rel[k] = status;
+    }
+
+    static SetKey(event) {
+        return event.key;
+    }
+}
+
+class GamePad extends KeyInput{
+    static pads = () => (navigator.getGamepads ? Array.from(navigator.getGamepads()) : []).filter(x => !!x);
+
+    static bpres = [];
+    static meta = [
+        {i:1,v:-1,b:12},
+        {i:1,v:1,b:13},
+        {i:0,v:-1,b:14},
+        {i:0,v:1,b:15}];
+
+    static Btn(i, p, h) {
+        const pads = this.pads();        
+        try {
+            var s = pads[p].buttons[i].pressed;
+            var d = (h&&s) || (s && (this.bpres[i+10] != s));
+            this.bpres[i+10] = s;
+            return d;
+        } catch (e) {}
+    };
+
+    static Joy(p, i, h){
+        var m = this.meta[i];
+        var s = this.Pad(m.i,m.v, p) || this.Btn(m.b, p, h);
+        var d = (h&&s) || (s && (this.bpres[i] != s));
+        this.bpres[i] = s;
+        return d;
+    }
+
+    static Pad (i, v, p) {
+        const pads = this.pads();
+        try {
+            if (Math.abs(v - pads[p].axes[i]) < 0.5) {
+                return true;
+            }
+        } catch (e) {}
+    };
+
+    static Pads(){
+        return this.pads();
+    }
+}
+
+class TouchPad extends GamePad{
+    static TouchEnabled = false;
+    static tpres = [];
+
+    static zones = [
+        {x:0,y:-80,r:64},
+        {x:0,y:80,r:64},
+        {x:-80,y:0,r:64},
+        {x:80,y:0,r:64},
+        {x:520,y:0,r:64}];
+    
+    static press = [];
+
+    static Init(canvas, enabled, rend){//, b2){
+        this.TouchEnabled = enabled;
+        this.rend = rend;
+
+        var m = this;
+        var TouchMove = function(e){
+            e.preventDefault();
+            if (e.touches) {
+                var rect = canvas.getBoundingClientRect(); // abs. size of element
+                m.press = [];
+                for (var i = 0; i < e.touches.length; i++) {
+                    var touch = e.touches[i];
+                    m.press.push({e:1,
+                        x:Math.round((touch.pageX - rect.left)*(canvas.width / rect.width)),
+                        y:Math.round((touch.pageY - rect.top)*(canvas.height / rect.height))});
+                }
+                
+            } 
+        }
+
+        var TouchEnd = function(e){
+            e.preventDefault();
+            m.press = [];
+        }
+
+        canvas.addEventListener("touchstart", TouchMove);
+        canvas.addEventListener("touchmove", TouchMove);
+        canvas.addEventListener("touchend", TouchEnd);
+        canvas.addEventListener("touchcancel", TouchEnd);
+    }
+
+    static Render(){
+        if(this.TouchEnabled){
+            this.rend.Circle(132, 500,128, '#000');
+            this.rend.Circle(132, 500,32, '#000');
+            this.rend.Circle(132+this.zones[4].x, 500,64, '#000');
+
+            for (var i = 0; i < this.press.length; i++) {
+                this.rend.Circle(this.press[i].x,this.press[i].y,64, '#999');
+            }     
+        }
+    }
+
+    static Touched(i) {
+        var s = this.Touch(i);
+        var d = s && (this.tpres[i] != s);
+        this.tpres[i] = s;
+        return d;
+    }
+
+    static Touching(i) {
+        var s = this.Touch(i);
+        this.tpres[i] = s;
+        return s;
+    }
+
+    // static Any() {
+    //     return this.press.length > 0;
+    // }
+
+    static Touch(indx) {
+        for (var i = 0; i < this.press.length; i++) {
+            var p = this.press[i];
+            var z = this.zones[indx];
+            
+            return (Math.sqrt( ((p.x-(132+z.x)) * (p.x-(132+z.x)))+((p.y-(500+z.y)) * (p.y-(500+z.y))) ) < 16 + z.r);
+        } 
+        return 0;
+    }
+}
+
+class Input extends TouchPad{
+    static Up(){return this.Touching(0) || this.IsDown('w','ArrowUp') || this.Btn(1,0) || this.Joy(0,0,1)}
+    static Down(){return this.Touching(1) || this.IsDown('s','ArrowDown') || this.Joy(0,1,1)}
+    static Left(){return this.Touching(2) || this.IsDown('a','ArrowLeft') || this.Joy(0,2,1)}
+    static Right(){return this.Touching(3) || this.IsDown('d','ArrowRight') || this.Joy(0,3,1)}
+    static Fire1(){return this.Touching(4) || this.IsSingle(' ') || this.Btn(0,0)}
+    static LeftS(){return this.Touched(2) || this.IsSingle('a') || this.IsSingle('ArrowLeft') || this.Joy(0,2,0)}
+    static RightS(){return this.Touched(3) || this.IsSingle('d') || this.IsSingle('ArrowRight') || this.Joy(0,3,0)}
+    static Space(){return this.Touched(4) || this.IsSingle(' ') || this.Btn(0,0)}
+}
+
+
+onkeydown = function(e)
+{
+	e.preventDefault();
+    Input.Pressed(e, true);
+};
+
+onkeyup = function(e)  {
+	e.preventDefault();
+    Input.Pressed(e, false);
+    Input.Released(e, true);
+};
+
+onblur = function(e)  {
+	e.preventDefault();
+    Input.pressedKeys = {};
+};
+
+const spriteSheet = new Image();
+spriteSheet.src = "untitled.png";
+
+// Example frame definitions — adjust to match your PNG
+const playerFrames = [
+  { x: 176,   y: 0,   w: 32, h: 48 },
+  { x: 208,  y: 0,   w: 32, h: 48 }
+];
+
+const unicornFrames = [
+  { x: 100,   y: 0,  w: 37, h: 32 },
+  { x: 137,  y: 0,  w: 37, h: 32 },
+  { x: 100,   y: 32,  w: 37, h: 32 },
+  { x: 137,  y: 32,  w: 37, h: 32 }
+];
+const groundFrames = [
+  { x: 0,   y: 0,  w: 100, h: 100 }
+];
+
+let stage = 0;
+let playerFrameIndex = 0;
+let unicornFrameIndex = 0;
+
+let uniframeTimer = 48;
+let uniframeInterval = 0; // lower = faster animation
+let uniMaxFrame = 2;
+
+let plrframeTimer = 64;
+let plrframeInterval = 0; // lower = faster animation
+let plrMaxFrame = 2;
+// World positions
+let playerWorldX = 0;
+let unicornWorldX = -500;          // unicorn starts behind you
+let hugepenis = 0;
+// Screen position where we *draw* the player (stays central-ish)
+const playerScreenX = 500;
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+
+    canvas.width = 180*5;
+	  canvas.height = 90*5;
+    var b = document.getElementById("cb");
+    b.appendChild(canvas);
+
+    const transvestite = { x: 400, y: 310 };
+    let unicorn = { x: 80, y: 344 };
+
+
+    let gameOver = false;
+    let running = false;
+
+// Player
+let playerSpeed = 0;
+let playerMaxSpeed = 12;
+let playerAcceleration = 0.5;
+let playerDeceleration = 0.08;
+let trany_scale = 3;//set the scale of the perverts
+
+// Unicorn
+let unicornSpeed = 0;
+
+let chasing = false;
+let tranyDist = 0;
+
+//cartoon
+playerMaxSpeed = 14;
+playerAcceleration = 1;
+
+
+
+    const groundTiles = [];
+    const tileWidth = 100;
+
+    for (let i = 0; i < 10; i++) {
+      groundTiles.push({ x: i * tileWidth, y: 350 });
+    }
+
+  function resetGame() {
+    unicorn.x = 80;
+    gameOver = false;
+  }
+
+function update() {
+  if (gameOver) return;
+
+  running = Input.Space();
+  
+
+  // TRANY SPEED
+  if (running) {
+    // make tranny run faster
+    playerSpeed += playerAcceleration;
+    if (playerSpeed > playerMaxSpeed) playerSpeed = playerMaxSpeed;
+  } 
+
+  // decelerate when not pressing
+  playerSpeed -= playerDeceleration;
+  if (playerSpeed < 0) playerSpeed = 0;
+
+  plrframeInterval += playerSpeed;
+  if(plrframeInterval>plrframeTimer){
+    plrframeInterval = 0;
+    playerFrameIndex++;
+    if(playerFrameIndex==plrMaxFrame){
+      playerFrameIndex=0;
+    }
+  }
+
+  // UNICORN SPEED - make unicorn chase the homo
+  if(playerSpeed>unicornSpeed){
+    unicornSpeed = playerSpeed;
+  }
+
+  uniframeInterval += unicornSpeed;
+  if(uniframeInterval>uniframeTimer){
+    uniframeInterval = 0;
+    unicornFrameIndex++;
+    if(unicornFrameIndex==uniMaxFrame){
+      unicornFrameIndex=0;
+    }
+  }
+  // MOVE BOTH IN WORLD SPACE
+  playerWorldX += playerSpeed;
+
+  if (playerSpeed > 0) {
+    chasing = true;
+  }
+
+  unicornWorldX += unicornSpeed;
+
+
+  tranyDist = playerWorldX - unicornWorldX;
+
+  // CAMERA
+  const cameraX = playerWorldX - playerScreenX;
+  window.currentCameraX = cameraX;
+
+  // SCROLL GROUND
+  for (let tile of groundTiles) {
+    tile.x -= playerSpeed;
+    if (tile.x < -tileWidth) {
+      tile.x += tileWidth * groundTiles.length;
+    }
+  }
+
+  // CHASE CHECK
+  const catchDistance = 40;
+  if (unicornWorldX >= playerWorldX - catchDistance) {
+    gameOver = true;
+  }
+}
+
+function PT(p){
+        return Math.round(p);
+    }
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const cameraX = window.currentCameraX || 0;
+
+  // Ground (already using tile.x, fine)
+  const gf = groundFrames[0];
+  for (let tile of groundTiles) {
+    ctx.drawImage(
+        spriteSheet,
+        gf.x, gf.y, gf.w, gf.h,
+        PT(tile.x), tile.y,
+        tileWidth, 100
+        );
+  }
+
+// Draw unicorn sprite
+hugepenis = tranyDist<128 ? 2 :0;
+const uf = unicornFrames[unicornFrameIndex+hugepenis];
+const unicornScreenX = unicornWorldX - currentCameraX;
+
+ctx.drawImage(
+  spriteSheet,
+  uf.x, uf.y, uf.w, uf.h,
+  PT(unicornScreenX - uf.w / 2),
+  unicorn.y - uf.h,
+  uf.w*trany_scale, uf.h*trany_scale
+);
+
+
+// Draw player sprite
+const pf = playerFrames[playerFrameIndex];
+ctx.drawImage(
+  spriteSheet,
+  pf.x, pf.y, pf.w, pf.h,
+  PT(playerScreenX - pf.w / 2),
+  transvestite.y - pf.h,
+  pf.w*trany_scale, pf.h*trany_scale
+);
+
+
+
+
+  // UI
+  ctx.fillStyle = "#fff";
+  ctx.font = "14px sans-serif";
+  ctx.fillText("Player speed: " + playerSpeed.toFixed(1), 10, 20);
+  ctx.fillText("Unicorn speed: " + unicornSpeed.toFixed(1), 10, 40);
+  ctx.fillText("distance: " + (tranyDist).toFixed(1), 10, 60);
+
+  ctx.fillText("Ran: " + (playerWorldX/100).toFixed(1), 10, 100);
+
+  if (gameOver) {
+    ctx.fillStyle = "#f44336";
+    ctx.font = "24px sans-serif";
+    ctx.fillText("GAME OVER – Unicorn caught you!", 200, 80);
+    ctx.font = "16px sans-serif";
+    ctx.fillText("Press SPACE or click RUN to restart.", 230, 110);
+  }
+
+}
+
+
+    function loop() {
+      if (!gameOver) {
+        update();
+      } else {
+        if (running) resetGame();
+      }
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    resetGame();
+    loop();
+
+
+
+  </script>
+</body>
+</html>
